@@ -1,9 +1,9 @@
 <?php
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Auth\AuthenticationException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($request->is('api/*') || $request->expectsJson()) {
                 return null; // Don't redirect for API routes - exception handler will return JSON
             }
+
             // For web routes, return null to let exception handler decide
             return null;
         });
@@ -33,6 +34,16 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'message' => 'Unauthenticated.',
                 ], 401);
+            }
+        });
+
+        // Handle PostTooLargeException for API routes
+        $exceptions->render(function (\Illuminate\Http\Exceptions\PostTooLargeException $e, $request) {
+            if ($request->is('api/*') || $request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'message' => 'The uploaded file is too large. Maximum file size allowed is 100MB.',
+                    'error' => 'File size exceeds the maximum allowed limit.',
+                ], 413);
             }
         });
 
