@@ -47,4 +47,83 @@ class VideoController extends Controller
 
         return VideoResource::collection($videos);
     }
+
+    /**
+     * Get a single video.
+     */
+    public function show(Request $request, Video $video): JsonResponse
+    {
+        // Ensure user owns the video
+        if ($video->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        return response()->json(new VideoResource($video));
+    }
+
+    /**
+     * Stream video with range request support.
+     */
+    public function stream(Request $request, Video $video)
+    {
+        // Ensure user owns the video
+        if ($video->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $filePath = storage_path('app/public/'.$video->file_path);
+
+        if (! file_exists($filePath)) {
+            return response()->json(['message' => 'Video file not found'], 404);
+        }
+
+        $fileSize = filesize($filePath);
+        $start = 0;
+        $end = $fileSize - 1;
+
+        // Handle range requests for streaming
+        if ($request->hasHeader('Range')) {
+            $range = $request->header('Range');
+            if (preg_match('/bytes=(\d+)-(\d*)/', $range, $matches)) {
+                $start = (int) $matches[1];
+                $end = $matches[2] ? (int) $matches[2] : $fileSize - 1;
+            }
+        }
+
+        $length = $end - $start + 1;
+        $file = fopen($filePath, 'rb');
+        fseek($file, $start);
+
+        return response()->stream(function () use ($file, $length) {
+            echo fread($file, $length);
+            fclose($file);
+        }, 206, [
+            'Content-Type' => $video->mime_type,
+            'Content-Length' => $length,
+            'Content-Range' => "bytes {$start}-{$end}/{$fileSize}",
+            'Accept-Ranges' => 'bytes',
+            'Cache-Control' => 'public, max-age=3600',
+        ]);
+    }
+
+    /**
+     * Download video for offline storage.
+     */
+    public function download(Request $request, Video $video)
+    {
+        // Ensure user owns the video
+        if ($video->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $filePath = storage_path('app/public/'.$video->file_path);
+
+        if (! file_exists($filePath)) {
+            return response()->json(['message' => 'Video file not found'], 404);
+        }
+
+        return response()->download($filePath, basename($video->file_path), [
+            'Content-Type' => $video->mime_type,
+        ]);
+    }
 }
